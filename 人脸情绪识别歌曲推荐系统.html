@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>人脸情绪识别歌曲推荐系统-20261026</title>
+<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui}
+body{padding:20px;background:#f4f7fa}
+#app{max-width:1100px;margin:0 auto}
+h1{text-align:center;color:#222;margin-bottom:20px;font-size:22px}
+.row{display:flex;gap:20px;flex-wrap:wrap}
+.box{flex:1;min-width:360px;background:#fff;padding:20px;border-radius:12px;box-shadow:0 2px 10px #00000015}
+video,canvas{width:100%;border-radius:8px;background:#000}
+.btns{margin:12px 0;display:flex;gap:10px;flex-wrap:wrap}
+button{padding:8px 14px;border:none;border-radius:6px;background:#4080ff;color:white;cursor:pointer}
+button:disabled{background:#aaa;cursor:not-allowed}
+input[type=file]{margin:8px 0}
+.emotion{font-size:20px;font-weight:bold;margin:10px 0;color:#d83636}
+.song-item{padding:8px 10px;border-bottom:1px solid #eee}
+.tip{color:#666;font-size:14px;margin:8px 0}
+</style>
+</head>
+<body>
+<div id="app">
+<h1>NieWei-20261026｜人脸情绪识别歌曲推荐系统</h1>
+<div class="row">
+  <div class="box">
+    <h3>图像采集</h3>
+    <div class="btns">
+      <button @click="openCamera" :disabled="loading">打开摄像头</button>
+      <button @click="capturePhoto" :disabled="!cameraOn">拍照</button>
+      <button @click="closeCamera" :disabled="!cameraOn">关闭摄像头</button>
+    </div>
+    <input type="file" accept="image/*" @change="uploadImg">
+    <video ref="videoRef" autoplay playsinline v-if="cameraOn"></video>
+    <canvas ref="canvasRef"></canvas>
+    <div class="tip">支持：实时摄像头 / 拍照 / 上传图片</div>
+  </div>
+  <div class="box">
+    <h3>识别结果 & 推荐歌单</h3>
+    <div class="tip">{{loading ? "模型加载中，请稍候..." : "就绪，开始识别人脸"}}</div>
+    <div class="emotion">识别情绪：{{emotion || "等待识别"}}</div>
+    <div v-if="songList.length">
+      <h4>为你推荐歌曲：</h4>
+      <div class="song-item" v-for="item in songList" :key="item.name">
+        {{item.name}} — {{item.singer}}
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+const { createApp, ref, onMounted } = Vue
+createApp({
+  setup(){
+    const videoRef = ref(null)
+    const canvasRef = ref(null)
+    const cameraOn = ref(false)
+    const loading = ref(true)
+    const emotion = ref("")
+    const songList = ref([])
+    let stream = null
+
+    // 情绪-歌单映射
+    const musicMap = {
+      happy: [
+        {name:"阳光彩虹小白马",singer:"大张伟"},
+        {name:"热爱105℃的你",singer:"阿肆"},
+        {name:"Good Time",singer:"Owl City"}
+      ],
+      sad: [
+        {name:"这世界那么多人",singer:"莫文蔚"},
+        {name:"城南花已开",singer:"三亩地"},
+        {name:"River Flows In You",singer:"李闰珉"}
+      ],
+      angry: [
+        {name:"卡农纯音乐",singer:"帕赫贝尔"},
+        {name:"Luv Letter",singer:"DJ Okawari"},
+        {name:"Weightless",singer:"Marconi Union"}
+      ],
+      surprised: [
+        {name:"Sugar",singer:"Maroon5"},
+        {name:"Shut Up and Dance",singer:"WALK THE MOON"},
+        {name:"Dynamite",singer:"BTS"}
+      ],
+      neutral: [
+        {name:"成都",singer:"赵雷"},
+        {name:"春风十里",singer:"鹿先森乐队"},
+        {name:"风居住的街道",singer:"矶村由纪子"}
+      ]
+    }
+    const emotionCn = {
+      happy:"开心",sad:"难过",angry:"生气",surprised:"惊讶",neutral:"平静"
+    }
+
+    // 加载face-api模型（CDN模型地址）
+    const loadModel = async ()=>{
+      await faceapi.nets.tinyFaceDetector.loadFromUri("https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model")
+      await faceapi.nets.faceExpressionNet.loadFromUri("https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model")
+      loading.value = false
+    }
+
+    // 识别人脸表情
+    const detectFace = async (img)=>{
+      const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions()).withFaceExpressions()
+      if(!detection){
+        emotion.value = "未检测到人脸"
+        songList.value = []
+        return
+      }
+      // 取概率最高表情
+      const expr = detection.expressions
+      const maxKey = Object.keys(expr).reduce((a,b)=>expr[a]>expr[b]?a:b)
+      emotion.value = emotionCn[maxKey] || maxKey
+      songList.value = musicMap[maxKey] || []
+    }
+
+    // 打开摄像头
+    const openCamera = async ()=>{
+      stream = await navigator.mediaDevices.getUserMedia({video:true})
+      videoRef.value.srcObject = stream
+      cameraOn.value = true
+    }
+    const closeCamera = ()=>{
+      if(stream) stream.getTracks().forEach(t=>t.stop())
+      cameraOn.value = false
+    }
+    // 拍照
+    const capturePhoto = ()=>{
+      const ctx = canvasRef.value.getContext("2d")
+      const v = videoRef.value
+      canvasRef.value.width = v.videoWidth
+      canvasRef.value.height = v.videoHeight
+      ctx.drawImage(v,0,0)
+      detectFace(canvasRef.value)
+    }
+    // 上传图片
+    const uploadImg = async (e)=>{
+      const file = e.target.files[0]
+      if(!file) return
+      const img = new Image()
+      img.src = URL.createObjectURL(file)
+      img.onload = ()=>detectFace(img)
+    }
+
+    onMounted(()=>loadModel())
+    return {videoRef,canvasRef,cameraOn,loading,emotion,songList,openCamera,closeCamera,capturePhoto,uploadImg}
+  }
+}).mount("#app")
+</script>
+</body>
+</html>
